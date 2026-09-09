@@ -1,16 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, AlertCircle, XCircle, Shield, Activity, FileText, User, Home } from 'lucide-react'
-import { apiService } from '@/lib/api'
+import { VerificationResult } from '@/lib/api'
 
 export default function ResultsPage() {
   const router = useRouter()
-  const auditRecordedRef = useRef(false)
-  const [results, setResults] = useState<any>(null)
-  const [riskScore, setRiskScore] = useState<any>(null)
-  const [riskError, setRiskError] = useState<string | null>(null)
+  const [result, setResult] = useState<VerificationResult | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated')
@@ -19,53 +17,19 @@ export default function ResultsPage() {
       return
     }
 
-    // Load all verification results from localStorage
-    const ocrResult = JSON.parse(localStorage.getItem('ocrResult') || '{}')
-    const mrzValid = JSON.parse(localStorage.getItem('mrzValid') || 'false')
-    const faceMatch = JSON.parse(localStorage.getItem('faceMatch') || '{}')
-    const liveness = JSON.parse(localStorage.getItem('liveness') || '{}')
-    const nfcResult = JSON.parse(localStorage.getItem('nfcResult') || '{}')
-    const tamperResult = JSON.parse(localStorage.getItem('tamperResult') || '{}')
-    setResults({
-      ocrResult,
-      mrzValid,
-      faceMatch,
-      liveness,
-      nfcResult,
-      tamperResult
-    })
-    setRiskScore(null)
-
-    if (auditRecordedRef.current) return
-    auditRecordedRef.current = true
-
-    const verificationId = `VER-${Date.now()}`
-    const verificationData = {
-      ocr: ocrResult,
-      mrzValid,
-      faceMatch,
-      liveness,
-      nfc: nfcResult,
-      tamper: tamperResult,
+    // Load verification result from localStorage
+    const storedResult = localStorage.getItem('verificationResult')
+    if (storedResult) {
+      try {
+        setResult(JSON.parse(storedResult))
+      } catch (error) {
+        console.error('Failed to parse verification result', error)
+        router.push('/verify')
+      }
+    } else {
+      router.push('/verify')
     }
-
-    const recordAudit = (finalRiskScore: any) => apiService.createAuditLog({
-      verificationId,
-      result: finalRiskScore.status,
-      riskScore: finalRiskScore.score,
-      checkResults: { ...verificationData, riskScore: finalRiskScore },
-    }).catch((error) => {
-      console.error('Failed to record verification audit log', error)
-    })
-
-    apiService.calculateRisk(verificationData)
-      .then((geminiRiskScore) => {
-        setRiskScore(geminiRiskScore)
-        return recordAudit(geminiRiskScore)
-      })
-      .catch((error) => {
-        setRiskError(error?.response?.data?.detail || 'Gemini scoring failed. Please try the verification again.')
-      })
+    setLoading(false)
   }, [router])
 
   const getStatusColor = (status: string) => {
@@ -87,43 +51,31 @@ export default function ResultsPage() {
   }
 
   const handleNewVerification = () => {
-    localStorage.removeItem('ocrResult')
-    localStorage.removeItem('mrzValid')
-    localStorage.removeItem('faceMatch')
-    localStorage.removeItem('liveness')
-    localStorage.removeItem('nfcResult')
-    localStorage.removeItem('tamperResult')
-    localStorage.removeItem('faceExtraction')
+    localStorage.removeItem('verificationResult')
     localStorage.removeItem('selectedScenario')
     router.push('/verify')
   }
 
   const handleBackToDashboard = () => {
-    localStorage.removeItem('ocrResult')
-    localStorage.removeItem('mrzValid')
-    localStorage.removeItem('faceMatch')
-    localStorage.removeItem('liveness')
-    localStorage.removeItem('nfcResult')
-    localStorage.removeItem('tamperResult')
-    localStorage.removeItem('faceExtraction')
+    localStorage.removeItem('verificationResult')
     localStorage.removeItem('selectedScenario')
     router.push('/dashboard')
   }
 
-  if (riskError) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
-        <div className="max-w-lg rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300">
-          {riskError}
-        </div>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-400">Loading results...</div>
       </div>
     )
   }
 
-  if (!results || !riskScore) {
+  if (!result) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-slate-400">Loading results...</div>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
+        <div className="max-w-lg rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300">
+          No verification result found. Please start a new verification.
+        </div>
       </div>
     )
   }
@@ -134,11 +86,11 @@ export default function ResultsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <button
-              onClick={() => router.push('/verify/biometric')}
+              onClick={handleNewVerification}
               className="flex items-center text-slate-300 hover:text-white"
             >
               <ArrowLeft className="w-5 h-5 mr-2" />
-              Back
+              Back to Verification
             </button>
             <div className="flex items-center">
               <Shield className="w-8 h-8 text-blue-500 mr-3" />
@@ -151,262 +103,159 @@ export default function ResultsPage() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Identity Verification Report</h1>
-          <p className="text-slate-400">Passenger: {results.ocrResult.name} | Passport: {results.ocrResult.passportNumber}</p>
+          <p className="text-slate-400">
+            ID: {result.verification_id} | Timestamp: {new Date(result.timestamp).toLocaleString()}
+          </p>
         </div>
 
         {/* Risk Score Banner */}
-        <div className={`rounded-xl p-8 border-2 mb-8 ${getStatusColor(riskScore.status)}`}>
+        <div className={`rounded-xl p-8 border-2 mb-8 ${getStatusColor(result.risk.level)}`}>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold mb-2">Risk Score: {riskScore.score}/100</h2>
-              <p className="text-lg">{riskScore.status === 'GREEN' ? 'FAST PASS' : riskScore.status === 'AMBER' ? 'HUMAN REVIEW' : 'ALERT & LOCKOUT'}</p>
+              <h2 className="text-2xl font-bold mb-2">Risk Score: {result.risk.score}/100</h2>
+              <p className="text-lg font-semibold">Decision: {result.risk.decision.replace(/_/g, ' ')}</p>
             </div>
             <div className="text-6xl">
-              {getStatusIcon(riskScore.status)}
+              {getStatusIcon(result.risk.level)}
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="font-semibold mb-2">Reasons:</h3>
-            <ul className="space-y-1">
-              {riskScore.reasons.map((reason: string, index: number) => (
-                <li key={index} className="flex items-start">
-                  <span className="mr-2">•</span>
-                  {reason}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Document Checks */}
-          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
-              <FileText className="w-5 h-5 mr-2" />
-              Document Checks
-            </h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                <span className="text-slate-400">OCR</span>
-                {results.ocrResult.confidence > 0.7 ? (
-                  <span className="text-green-400 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    PASS
+          <div className="mt-6">
+            <h3 className="font-semibold mb-3">Risk Factors:</h3>
+            <div className="space-y-2">
+              {result.risk.reasons.map((reason, index) => (
+                <div key={index} className="flex items-start">
+                  <span className={`px-2 py-1 rounded text-xs font-semibold mr-3 ${
+                    reason.severity === 'HIGH' ? 'bg-red-500/20 text-red-300' :
+                    reason.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-300' :
+                    'bg-green-500/20 text-green-300'
+                  }`}>
+                    {reason.severity}
                   </span>
-                ) : (
-                  <span className="text-red-400 flex items-center">
-                    <XCircle className="w-4 h-4 mr-2" />
-                    FAIL
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                <span className="text-slate-400">MRZ</span>
-                {results.mrzValid ? (
-                  <span className="text-green-400 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    PASS
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center">
-                    <XCircle className="w-4 h-4 mr-2" />
-                    FAIL
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                <span className="text-slate-400">NFC</span>
-                {results.nfcResult.success ? (
-                  <span className="text-green-400 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    PASS
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center">
-                    <XCircle className="w-4 h-4 mr-2" />
-                    FAIL
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                <span className="text-slate-400">Certificate</span>
-                {results.nfcResult.certificateValid ? (
-                  <span className="text-green-400 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    PASS
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center">
-                    <XCircle className="w-4 h-4 mr-2" />
-                    FAIL
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                <span className="text-slate-400">Tamper Detection</span>
-                {!results.tamperResult.manipulationDetected ? (
-                  <span className="text-green-400 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    PASS
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center">
-                    <XCircle className="w-4 h-4 mr-2" />
-                    FAIL
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Biometric Checks */}
-          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
-              <User className="w-5 h-5 mr-2" />
-              Biometric Checks
-            </h2>
-            <div className="space-y-3">
-              <div className="p-3 bg-slate-900/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-400">Face Match</span>
-                  {results.faceMatch.match ? (
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-red-400" />
-                  )}
-                </div>
-                <div className="text-white font-medium">
-                  Similarity: {results.faceMatch.similarity_score || (results.faceMatch.similarity * 100).toFixed(1)}%
-                </div>
-                {results.faceMatch.status && (
-                  <div className="text-slate-400 text-sm mt-1">
-                    Status: {results.faceMatch.status}
+                  <div>
+                    <div className="font-medium">{reason.check.replace(/_/g, ' ').toUpperCase()}</div>
+                    <div className="text-sm opacity-90">{reason.message}</div>
                   </div>
-                )}
-              </div>
-              <div className="p-3 bg-slate-900/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-400">Liveness</span>
-                  {results.liveness.live ? (
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-red-400" />
-                  )}
                 </div>
-                <div className="text-white font-medium">
-                  {results.liveness.live ? 'Live Person Detected' : results.liveness.spoofType || 'Spoof Detected'}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Risk Breakdown */}
+        {/* Verification Checks */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* OCR Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">OCR Extraction</h3>
+              {result.checks.ocr.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.ocr.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.ocr.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.ocr.reason}</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-slate-400">Name:</span> <span className="text-white">{result.document.full_name}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Passport:</span> <span className="text-white">{result.document.passport_number}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">DOB:</span> <span className="text-white">{result.document.date_of_birth}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Expiry:</span> <span className="text-white">{result.document.expiry_date}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Source:</span> <span className="text-white">{result.document.extraction_source}</span></div>
+            </div>
+          </div>
+
+          {/* MRZ Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">MRZ Validation</h3>
+              {result.checks.mrz.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.mrz.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.mrz.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.mrz.reason}</p>
+            <div className="text-xs text-slate-400 bg-slate-900/50 p-3 rounded font-mono break-all">{result.document.mrz}</div>
+          </div>
+
+          {/* Face Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Face Verification</h3>
+              {result.checks.face.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.face.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.face.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.face.reason}</p>
+            {result.checks.face.simulated && <p className="text-xs text-slate-500">[Simulated Check]</p>}
+          </div>
+
+          {/* Liveness Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Liveness Detection</h3>
+              {result.checks.liveness.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.liveness.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.liveness.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.liveness.reason}</p>
+            {result.checks.liveness.simulated && <p className="text-xs text-slate-500">[Simulated Check]</p>}
+          </div>
+
+          {/* NFC Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">NFC Chip Verification</h3>
+              {result.checks.nfc.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.nfc.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.nfc.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.nfc.reason}</p>
+            {result.checks.nfc.simulated && <p className="text-xs text-slate-500">[Simulated Check]</p>}
+          </div>
+
+          {/* Tamper Check */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Tamper Analysis</h3>
+              {result.checks.tamper.status === 'PASS' && <CheckCircle className="w-6 h-6 text-green-400" />}
+              {result.checks.tamper.status === 'FAIL' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.checks.tamper.status === 'WARNING' && <AlertCircle className="w-6 h-6 text-yellow-400" />}
+            </div>
+            <p className="text-slate-300 text-sm mb-3">{result.checks.tamper.reason}</p>
+            {result.checks.tamper.simulated && <p className="text-xs text-slate-500">[Simulated Check]</p>}
+          </div>
+        </div>
+
+        {/* Summary */}
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <Activity className="w-5 h-5 mr-2" />
-            Risk Score Breakdown
-          </h2>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">OCR Validity</span>
-                <span className="text-white">{riskScore.breakdown.ocr}/20</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.ocr / 20) * 100}%` }}
-                ></div>
-              </div>
+          <h3 className="text-lg font-semibold text-white mb-4">Verification Summary</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-400">{result.risk.passed_checks.length}</div>
+              <div className="text-xs text-slate-400 mt-2">Checks Passed</div>
             </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">MRZ Validity</span>
-                <span className="text-white">{riskScore.breakdown.mrz}/20</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.mrz / 20) * 100}%` }}
-                ></div>
-              </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-red-400">{result.risk.failed_checks.length}</div>
+              <div className="text-xs text-slate-400 mt-2">Checks Failed</div>
             </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">NFC Validity</span>
-                <span className="text-white">{riskScore.breakdown.nfc}/20</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.nfc / 20) * 100}%` }}
-                ></div>
-              </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-blue-400">{result.metadata.processing_time_ms}ms</div>
+              <div className="text-xs text-slate-400 mt-2">Processing Time</div>
             </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">Certificate Validity</span>
-                <span className="text-white">{riskScore.breakdown.certificate}/15</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.certificate / 15) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">Face Match</span>
-                <span className="text-white">{riskScore.breakdown.faceMatch}/15</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.faceMatch / 15) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">Liveness</span>
-                <span className="text-white">{riskScore.breakdown.liveness}/10</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${(riskScore.breakdown.liveness / 10) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-400">Tamper Detection (Penalty)</span>
-                <span className="text-white">-{riskScore.breakdown.tamper}</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-red-600 h-2 rounded-full"
-                  style={{ width: `${Math.min((riskScore.breakdown.tamper / 30) * 100, 100)}%` }}
-                ></div>
-              </div>
+            <div className="bg-slate-900/50 rounded-lg p-4 text-center">
+              <div className="text-sm font-semibold text-slate-300">{result.metadata.groq_used ? 'Groq' : 'Local'}</div>
+              <div className="text-xs text-slate-400 mt-2">OCR Method</div>
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-4">
+        <div className="flex gap-4 justify-center">
           <button
             onClick={handleNewVerification}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
           >
-            <Shield className="w-5 h-5 mr-2" />
             New Verification
           </button>
           <button
             onClick={handleBackToDashboard}
-            className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center"
+            className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors flex items-center"
           >
             <Home className="w-5 h-5 mr-2" />
             Back to Dashboard

@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Upload, Camera, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
-import { apiService } from '@/lib/api'
+import { apiService, VerificationResult } from '@/lib/api'
 
 export default function DocumentPage() {
   const router = useRouter()
@@ -16,11 +16,7 @@ export default function DocumentPage() {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [ocrResult, setOcrResult] = useState<any>(null)
-  const [mrzValid, setMrzValid] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [faceExtraction, setFaceExtraction] = useState<any>(null)
-  const [isExtractingFace, setIsExtractingFace] = useState(false)
 
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated')
@@ -108,46 +104,28 @@ export default function DocumentPage() {
 
     setIsProcessing(true)
     setError(null)
-    setIsExtractingFace(true)
 
     try {
-      const uploadedResult = await apiService.uploadDocument(file)
-      const mrzValidation = await apiService.verifyMRZ(uploadedResult.mrz)
-      const shouldTreatAsValidFallback = !uploadedResult.mrz || uploadedResult.mrz.trim().length === 0
-
-      setOcrResult(uploadedResult)
-      setMrzValid(shouldTreatAsValidFallback ? true : mrzValidation.valid)
-      localStorage.setItem('ocrResult', JSON.stringify(uploadedResult))
-      localStorage.setItem('mrzValid', JSON.stringify(shouldTreatAsValidFallback ? true : mrzValidation.valid))
-
-      // Extract face from passport
-      const faceResult = await apiService.extractFace(file)
-      setFaceExtraction(faceResult)
-      localStorage.setItem('faceExtraction', JSON.stringify(faceResult))
+      const scenario = localStorage.getItem('selectedScenario')
+      const result: VerificationResult = await apiService.verification(scenario, file, null)
+      
+      // Store result in localStorage for results page
+      localStorage.setItem('verificationResult', JSON.stringify(result))
+      
+      router.push('/verify/results')
     } catch (err: any) {
-      const message = err?.response?.data?.detail || err?.message || 'Document processing failed.'
+      const message = err?.response?.data?.detail || err?.message || 'Verification failed.'
       setError(message)
-      setOcrResult(null)
-      setMrzValid(null)
-      setFaceExtraction(null)
     } finally {
       setIsProcessing(false)
-      setIsExtractingFace(false)
     }
-  }
-
-  const handleNext = () => {
-    router.push('/verify/biometric')
   }
 
   const resetInput = () => {
     setFile(null)
     setPreview(null)
-    setOcrResult(null)
-    setMrzValid(null)
     setError(null)
     setCameraError(null)
-    setFaceExtraction(null)
   }
 
   return (
@@ -259,7 +237,7 @@ export default function DocumentPage() {
               </div>
             )}
 
-            {file && !ocrResult && (
+            {file && (
               <button
                 onClick={handleProcess}
                 disabled={isProcessing}
@@ -287,105 +265,24 @@ export default function DocumentPage() {
           </div>
 
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-            <h2 className="text-xl font-semibold text-white mb-4">Scanned Input</h2>
+            <h2 className="text-xl font-semibold text-white mb-4">Verification Status</h2>
 
-            {!ocrResult ? (
+            {isProcessing ? (
               <div className="text-center py-12">
-                <FileText className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                <p className="text-slate-500">Scan or upload a document to see parsed values</p>
+                <Loader2 className="w-12 h-12 text-blue-500 mx-auto mb-4 animate-spin" />
+                <p className="text-slate-400">Running verification...</p>
+                <p className="text-slate-500 text-sm mt-2">This includes OCR, MRZ validation, biometric checks, and risk assessment.</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {/* Extracted Passport Face */}
-                {faceExtraction && faceExtraction.face_detected && (
-                  <div className="bg-slate-900/50 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-slate-400 font-medium">Extracted Passport Face</span>
-                      {faceExtraction.face_detected ? (
-                        <CheckCircle className="w-5 h-5 text-green-400" />
-                      ) : (
-                        <AlertCircle className="w-5 h-5 text-red-400" />
-                      )}
-                    </div>
-                    <div className="relative w-full h-48 mb-3 rounded-lg overflow-hidden bg-slate-900">
-                      <Image
-                        src={`data:image/jpeg;base64,${faceExtraction.face_image}`}
-                        alt="Extracted passport face"
-                        fill
-                        className="object-contain"
-                        unoptimized
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Detection Confidence:</span>
-                      <span className="text-white font-medium">{(faceExtraction.confidence * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                )}
+              <div className="text-center py-12">
+                <FileText className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                <p className="text-slate-500">Upload a document to begin</p>
+              </div>
+            )}
 
-                {isExtractingFace && (
-                  <div className="bg-slate-900/50 rounded-lg p-4">
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="w-8 h-8 text-blue-500 animate-spin mr-3" />
-                      <span className="text-slate-400">Extracting passport face...</span>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Name</span>
-                  <span className="text-white font-medium">{ocrResult.name}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Passport Number</span>
-                  <span className="text-white font-medium">{ocrResult.passportNumber}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Date of Birth</span>
-                  <span className="text-white font-medium">{ocrResult.dateOfBirth}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Nationality</span>
-                  <span className="text-white font-medium">{ocrResult.nationality}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Expiry Date</span>
-                  <span className="text-white font-medium">{ocrResult.expiryDate}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">MRZ</span>
-                  <span className="text-white font-mono text-sm">{ocrResult.mrz.substring(0, 30)}...</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Confidence</span>
-                  <span className="text-white font-medium">{(ocrResult.confidence * 100).toFixed(1)}%</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">Extraction Source</span>
-                  <span className="text-white font-medium">
-                    {ocrResult.extractionSource === 'gemini' ? 'Gemini LLM' : 'Local OCR fallback'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                  <span className="text-slate-400">MRZ Validation</span>
-                  {mrzValid ? (
-                    <span className="text-green-400 flex items-center">
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Valid
-                    </span>
-                  ) : (
-                    <span className="text-red-400 flex items-center">
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      Invalid
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleNext}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
-                >
-                  Continue to Biometric Verification
-                </button>
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+                {error}
               </div>
             )}
           </div>

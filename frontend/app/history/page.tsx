@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, AlertCircle, XCircle, Calendar, User, FileText } from 'lucide-react'
+import { apiService, HistoryRecord } from '@/lib/api'
 
 export default function HistoryPage() {
   const router = useRouter()
-  const [history, setHistory] = useState<any[]>([])
+  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated')
@@ -15,34 +17,19 @@ export default function HistoryPage() {
       return
     }
 
-    // Mock history data
-    const mockHistory = [
-      {
-        id: 'VER-001',
-        timestamp: '2026-09-08 14:30:00',
-        passengerName: 'John Doe',
-        passportNumber: 'AB1234567',
-        riskScore: 8,
-        status: 'GREEN'
-      },
-      {
-        id: 'VER-002',
-        timestamp: '2026-09-08 13:45:00',
-        passengerName: 'John Smith',
-        passportNumber: 'XY9876543',
-        riskScore: 62,
-        status: 'AMBER'
-      },
-      {
-        id: 'VER-003',
-        timestamp: '2026-09-08 12:15:00',
-        passengerName: 'Jane Johnson',
-        passportNumber: 'ZZ5555555',
-        riskScore: 85,
-        status: 'RED'
+    const loadHistory = async () => {
+      try {
+        const data = await apiService.getHistory()
+        setHistory(data)
+      } catch (error) {
+        console.error('Failed to load history', error)
+        setHistory([])
+      } finally {
+        setLoading(false)
       }
-    ]
-    setHistory(mockHistory)
+    }
+
+    loadHistory()
   }, [router])
 
   const getStatusColor = (status: string) => {
@@ -61,6 +48,14 @@ export default function HistoryPage() {
       case 'RED': return <XCircle className="w-5 h-5" />
       default: return null
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-400">Loading history...</div>
+      </div>
+    )
   }
 
   return (
@@ -103,22 +98,22 @@ export default function HistoryPage() {
             </thead>
             <tbody className="divide-y divide-slate-700">
               {history.map((record) => (
-                <tr key={record.id} className="hover:bg-slate-700/50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{record.id}</td>
+                <tr key={record.verification_id} className="hover:bg-slate-700/50 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{record.verification_id}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-400 flex items-center">
                     <Calendar className="w-4 h-4 mr-2" />
-                    {record.timestamp}
+                    {new Date(record.timestamp).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-white flex items-center">
                     <User className="w-4 h-4 mr-2 text-slate-400" />
-                    {record.passengerName}
+                    {record.full_name || 'N/A'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{record.passportNumber}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{record.riskScore}/100</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{record.passport_number_masked || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{record.score}/100</td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(record.status)} flex items-center w-fit`}>
-                      {getStatusIcon(record.status)}
-                      <span className="ml-2">{record.status}</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(record.level)} flex items-center w-fit`}>
+                      {getStatusIcon(record.level)}
+                      <span className="ml-2">{record.level}</span>
                     </span>
                   </td>
                 </tr>

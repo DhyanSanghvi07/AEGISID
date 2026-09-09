@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8010/api'
+const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
 const normalizedBaseUrl = rawBaseUrl.replace(/\/+$/, '')
 const API_BASE_URL = normalizedBaseUrl.endsWith('/api')
   ? normalizedBaseUrl
@@ -12,6 +12,50 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+// JWT Token Interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Response interceptor for unauthorized
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('isAuthenticated')
+        localStorage.removeItem('userRole')
+        window.location.href = '/'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
+export interface User {
+  username: string
+  role: string
+  officer_id: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface TokenResponse {
+  access_token: string
+  user: User
+}
 
 export interface OCRResult {
   name: string
@@ -74,112 +118,208 @@ export interface LivenessResult {
 
 export interface RiskScore {
   score: number
-  status: 'GREEN' | 'AMBER' | 'RED'
-  reasons: string[]
-  breakdown: {
-    ocr: number
-    mrz: number
-    nfc: number
-    certificate: number
-    faceMatch: number
-    liveness: number
-    tamper: number
-  }
+  level: 'GREEN' | 'AMBER' | 'RED'
+  decision: 'FAST_PASS' | 'HUMAN_REVIEW' | 'ALERT_LOCKOUT'
+  reasons: Array<{
+    check: string
+    impact: number
+    severity: string
+    message: string
+  }>
+  passed_checks: string[]
+  failed_checks: string[]
+}
+
+export interface CheckResult {
+  status: 'PASS' | 'FAIL' | 'WARNING' | 'NOT_CHECKED'
+  confidence: number | null
+  reason: string
+  simulated: boolean
+  details?: Record<string, any>
+}
+
+export interface DocumentData {
+  document_type: string
+  passport_number: string | null
+  full_name: string | null
+  date_of_birth: string | null
+  nationality: string | null
+  issuing_country: string | null
+  expiry_date: string | null
+  mrz: string | null
+  extraction_confidence: number
+  extraction_source: string
+}
+
+export interface VerificationChecks {
+  ocr: CheckResult
+  mrz: CheckResult
+  document_consistency: CheckResult
+  face: CheckResult
+  liveness: CheckResult
+  nfc: CheckResult
+  tamper: CheckResult
+}
+
+export interface VerificationMetadata {
+  scenario: string | null
+  prototype: boolean
+  processing_time_ms: number
+  groq_used: boolean
 }
 
 export interface VerificationResult {
-  id: string
+  verification_id: string
   timestamp: string
-  passengerName: string
-  passportNumber: string
-  ocr: OCRResult
-  mrzValidation: MRZValidation
-  nfc: NFCVerification
-  tamper: TamperAnalysis
-  faceMatch: FaceMatch
-  liveness: LivenessResult
-  riskScore: RiskScore
+  officer_id: string
+  document: DocumentData
+  checks: VerificationChecks
+  risk: RiskScore
+  metadata: VerificationMetadata
+}
+
+export interface HistoryRecord {
+  verification_id: string
+  timestamp: string
+  officer_id: string
+  scenario: string | null
+  full_name: string | null
+  passport_number_masked: string | null
+  score: number
+  level: 'GREEN' | 'AMBER' | 'RED'
+  decision: 'FAST_PASS' | 'HUMAN_REVIEW' | 'ALERT_LOCKOUT'
+}
+
+export interface DashboardStats {
+  total_verifications: number
+  green_count: number
+  amber_count: number
+  red_count: number
+  today_count: number
+  recent: HistoryRecord[]
+  high_risk_alerts: HistoryRecord[]
+}
+
+export interface RuntimeSettings {
+  session_timeout_minutes: number
+  groq_enabled: boolean
+  groq_model: string
+  demo_mode: boolean
+  green_max: number
+  amber_max: number
+  max_upload_size_mb: number
+  enable_nfc: boolean
+  enable_liveness: boolean
+  enable_tamper_detection: boolean
+  enable_audit_logging: boolean
+}
+
+export interface AuditLog {
+  audit_id: string
+  timestamp: string
+  actor: string
+  action: string
+  verification_id: string | null
+  event_data: Record<string, any>
+  previous_hash: string
+  current_hash: string
 }
 
 export const apiService = {
-  async uploadDocument(file: File): Promise<OCRResult> {
+  // Auth endpoints
+  async login(username: string, password: string): Promise<TokenResponse> {
+    const response = await api.post('/auth/login', { username, password })
+    const { access_token, user } = response.data
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', access_token)
+      localStorage.setItem('isAuthenticated', 'true')
+      localStorage.setItem('userRole', user.role)
+      localStorage.setItem('username', user.username)
+    }
+    return response.data
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await api.post('/auth/logout')
+    } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('isAuthenticated')
+        localStorage.removeItem('userRole')
+        localStorage.removeItem('username')
+      }
+    }
+  },
+
+  async getCurrentUser(): Promise<User> {
+    const response = await api.get('/auth/me')
+    return response.data
+  },
+
+  // Main verification endpoint (complete flow)
+  async verification(
+    scenario: string | null,
+    documentFile: File | null,
+    faceImage: File | null
+  ): Promise<VerificationResult> {
     const formData = new FormData()
-    formData.append('file', file)
-    const response = await api.post('/upload-document', formData, {
+    if (scenario) formData.append('scenario', scenario)
+    if (documentFile) formData.append('document', documentFile)
+    if (faceImage) formData.append('face_image', faceImage)
+
+    const response = await api.post('/verification', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return response.data
   },
 
-  async verifyMRZ(mrz: string): Promise<MRZValidation> {
-    const response = await api.post('/mrz/verify', { mrz })
-    return response.data
-  },
-
-  async verifyNFC(passportData: any): Promise<NFCVerification> {
-    const response = await api.post('/nfc/verify', passportData)
-    return response.data
-  },
-
-  async analyzeTamper(imageFile: File): Promise<TamperAnalysis> {
-    const formData = new FormData()
-    formData.append('file', imageFile)
-    const response = await api.post('/tamper/analyze', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data
-  },
-
-  async matchFace(passportImage: File, faceImage: File): Promise<FaceMatch> {
-    const formData = new FormData()
-    formData.append('passportImage', passportImage)
-    formData.append('faceImage', faceImage)
-    const response = await api.post('/face/match', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data
-  },
-
-  async extractFace(imageFile: File): Promise<FaceExtraction> {
-    const formData = new FormData()
-    formData.append('file', imageFile)
-    const response = await api.post('/face/extract', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data
-  },
-
-  async checkLiveness(faceImage: File): Promise<LivenessResult> {
-    const formData = new FormData()
-    formData.append('file', faceImage)
-    const response = await api.post('/liveness', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data
-  },
-
-  async calculateRisk(verificationData: any): Promise<RiskScore> {
-    const response = await api.post('/risk-score', verificationData)
-    return response.data
-  },
-
-  async completeVerification(data: any): Promise<VerificationResult> {
-    const response = await api.post('/verification', data)
-    return response.data
-  },
-
-  async getHistory() {
+  // History endpoints
+  async getHistory(): Promise<HistoryRecord[]> {
     const response = await api.get('/history')
     return response.data
   },
 
-  async getAuditLogs() {
+  async getHistoryItem(verificationId: string): Promise<VerificationResult> {
+    const response = await api.get(`/history/${verificationId}`)
+    return response.data
+  },
+
+  // Dashboard endpoint
+  async getDashboard(): Promise<DashboardStats> {
+    const response = await api.get('/dashboard')
+    return response.data
+  },
+
+  // Settings endpoints
+  async getSettings(): Promise<RuntimeSettings> {
+    const response = await api.get('/settings')
+    return response.data
+  },
+
+  async updateSettings(settings: Partial<RuntimeSettings>): Promise<RuntimeSettings> {
+    const response = await api.post('/settings', settings)
+    return response.data
+  },
+
+  // Audit endpoints
+  async getAuditLogs(): Promise<AuditLog[]> {
     const response = await api.get('/audit-logs')
     return response.data
   },
 
-  async createAuditLog(data: any) {
+  async getAuditLog(auditId: string): Promise<AuditLog> {
+    const response = await api.get(`/audit-log/${auditId}`)
+    return response.data
+  },
+
+  async createAuditLog(data: any): Promise<AuditLog> {
     const response = await api.post('/audit-log', data)
+    return response.data
+  },
+
+  async verifyAuditIntegrity(): Promise<any> {
+    const response = await api.get('/audit-integrity')
     return response.data
   },
 }

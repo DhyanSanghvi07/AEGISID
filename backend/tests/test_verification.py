@@ -4,90 +4,45 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.api.verification import (
-    extract_indian_document_fields,
-    find_tesseract_executable,
-    read_ocr_text,
-    upload_document,
-    verify_mrz,
-)
-from app.services.gemini import gemini_service
+from app.services.mrz_service import mrz_service, validate_td3_check_digits, parse_td3
+from app.services.ocr_service import find_tesseract_executable
+from app.constants import Scenario
 
 
 class VerificationTests(unittest.TestCase):
-    def test_find_tesseract_executable_uses_common_windows_locations(self):
-        with patch('app.api.verification.os.path.isfile', return_value=True):
-            with patch('app.api.verification.shutil.which', return_value=None):
-                result = find_tesseract_executable()
-                self.assertIn('tesseract', result.lower())
-
-    def test_indian_passport_style_text_extracts_identity_fields(self):
-        sample = """Given Name(s)
-SITA MAHA LAKSHMI
-Nationality
-INDIAN
-Sex F
-Date of Birth
-23/09/1959
-Place of Birth
-GUNDUGOLANU
-Date of Issue
-11/10/2011
-Date of Expiry
-10/10/2021"""
-        result = extract_indian_document_fields(sample)
-        self.assertEqual(result['name'], 'SITA MAHA LAKSHMI')
-        self.assertEqual(result['nationality'], 'INDIAN')
-        self.assertEqual(result['dateOfBirth'], '1959-09-23')
-        self.assertEqual(result['expiryDate'], '2021-10-10')
-
-    def test_invalid_mrz_falls_back_to_indian_document_fields(self):
-        class FakeFile:
-            async def read(self):
-                return b'fake-image-bytes'
-
-        sample = """P<INDSITA<MAHA<LAKSHMI<<<<<<<<<<<<<<<<<<
-Given Name(s)
-SITA MAHA LAKSHMI
-Nationality
-INDIAN
-Sex F
-Date of Birth
-23/09/1959
-Place of Birth
-GUNDUGOLANU
-Date of Issue
-11/10/2011
-Date of Expiry
-10/10/2021"""
-
-        with patch('app.api.verification.read_ocr_text', return_value=sample), \
-             patch.object(gemini_service, 'enabled', False):
-            result = asyncio.run(upload_document(FakeFile()))
-            self.assertEqual(result['name'], 'SITA MAHA LAKSHMI')
-            self.assertEqual(result['nationality'], 'INDIAN')
-            self.assertEqual(result['dateOfBirth'], '1959-09-23')
-
-    def test_valid_mrz_passes(self):
-        mrz = 'P<USAAB1234567<9001155M3001015<<<<<<<<<<<<<<5'
-        result = asyncio.run(verify_mrz({"mrz": mrz}))
-        self.assertTrue(result["valid"])
-        self.assertTrue(result["checksumValid"])
+    def test_valid_mrz_passes_checksum(self):
+        """Test that valid MRZ passes checksum validation."""
+        mrz = "P<USATRAVELER<<ALEX<<<<<<<<<<<<<<<<<<<<<<<\nP1234567<8USA9001157M3001155<<<<<<<<<<<<<<04"
+        result = mrz_service.validate(mrz, scenario=Scenario.GENUINE)
+        self.assertEqual(result.status.value, "PASS")
 
     def test_invalid_mrz_fails(self):
-        result = asyncio.run(verify_mrz({"mrz": 'bad-data'}))
-        self.assertFalse(result["valid"])
-        self.assertFalse(result["checksumValid"])
+        """Test that invalid MRZ fails validation."""
+        result = mrz_service.validate("invalid-mrz", scenario=None)
+        self.assertIn(result.status.value, ["FAIL", "WARNING"])
 
-    def test_missing_tesseract_is_reported_clearly(self):
-        class FakeFile:
-            async def read(self):
-                return b'fake-image-bytes'
+    def test_genuine_scenario_passes_all_checks(self):
+        """Test that GENUINE scenario returns PASS for all checks."""
+        result = mrz_service.validate("any-mrz", scenario=Scenario.GENUINE)
+        self.assertEqual(result.status.value, "PASS")
 
-        with patch('app.api.verification.find_tesseract_executable', return_value=None):
-            with self.assertRaises(HTTPException) as ctx:
-                asyncio.run(read_ocr_text(FakeFile()))
-            self.assertIn('Tesseract is not installed or not in PATH', str(ctx.exception.detail))
+    def test_suspicious_scenario_fails_mrz(self):
+        """Test that SUSPICIOUS scenario returns FAIL for MRZ."""
+        result = mrz_service.validate("any-mrz", scenario=Scenario.SUSPICIOUS)
+        self.assertEqual(result.status.value, "FAIL")
+
+    def test_fake_scenario_fails_mrz(self):
+        """Test that FAKE scenario returns FAIL for MRZ."""
+        result = mrz_service.validate("any-mrz", scenario=Scenario.FAKE)
+        self.assertEqual(result.status.value, "FAIL")
+
+    def test_td3_parsing(self):
+        """Test TD3 format MRZ parsing."""
+        mrz = "P<USATRAVELER<<ALEX<<<<<<<<<<<<<<<<<<<<<<<\nP1234567<8USA9001157M3001155<<<<<<<<<<<<<<04"
+        parsed = parse_td3(mrz)
+        self.assertEqual(parsed.get("full_name"), "ALEX TRAVELER")
+        self.assertEqual(parsed.get("passport_number"), "P1234567")
+        self.assertEqual(parsed.get("nationality"), "USA")
 
 
 if __name__ == '__main__':

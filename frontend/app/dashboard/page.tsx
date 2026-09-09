@@ -3,31 +3,61 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Shield, User, FileText, Activity, History, Settings, LogOut, Plus, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
+import { apiService, DashboardStats } from '@/lib/api'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [stats, setStats] = useState({
-    totalVerifications: 0,
-    greenPasses: 0,
-    amberReviews: 0,
-    redAlerts: 0,
-  })
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated')
     if (!isAuthenticated) {
       router.push('/')
+      return
     }
+
+    const loadStats = async () => {
+      try {
+        const data = await apiService.getDashboard()
+        setStats(data)
+      } catch (error) {
+        console.error('Failed to load dashboard stats', error)
+        setStats({
+          total_verifications: 0,
+          green_count: 0,
+          amber_count: 0,
+          red_count: 0,
+          today_count: 0,
+          recent: [],
+          high_risk_alerts: [],
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadStats()
   }, [router])
 
-  const handleLogout = () => {
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('userRole')
-    router.push('/')
+  const handleLogout = async () => {
+    try {
+      await apiService.logout()
+    } finally {
+      router.push('/')
+    }
   }
 
   const startVerification = () => {
     router.push('/verify')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-400">Loading dashboard...</div>
+      </div>
+    )
   }
 
   return (
@@ -83,7 +113,7 @@ export default function DashboardPage() {
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <Activity className="w-8 h-8 text-blue-500" />
-              <span className="text-2xl font-bold text-white">{stats.totalVerifications}</span>
+              <span className="text-2xl font-bold text-white">{stats?.total_verifications || 0}</span>
             </div>
             <p className="text-slate-400 text-sm">Total Verifications</p>
           </div>
@@ -91,7 +121,7 @@ export default function DashboardPage() {
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <CheckCircle className="w-8 h-8 text-green-500" />
-              <span className="text-2xl font-bold text-white">{stats.greenPasses}</span>
+              <span className="text-2xl font-bold text-white">{stats?.green_count || 0}</span>
             </div>
             <p className="text-slate-400 text-sm">Green Passes</p>
           </div>
@@ -99,7 +129,7 @@ export default function DashboardPage() {
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <AlertTriangle className="w-8 h-8 text-yellow-500" />
-              <span className="text-2xl font-bold text-white">{stats.amberReviews}</span>
+              <span className="text-2xl font-bold text-white">{stats?.amber_count || 0}</span>
             </div>
             <p className="text-slate-400 text-sm">Amber Reviews</p>
           </div>
@@ -107,7 +137,7 @@ export default function DashboardPage() {
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <XCircle className="w-8 h-8 text-red-500" />
-              <span className="text-2xl font-bold text-white">{stats.redAlerts}</span>
+              <span className="text-2xl font-bold text-white">{stats?.red_count || 0}</span>
             </div>
             <p className="text-slate-400 text-sm">Red Alerts</p>
           </div>

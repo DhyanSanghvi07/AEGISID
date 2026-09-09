@@ -2,27 +2,28 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Shield, Lock, User } from 'lucide-react'
+import { Shield, Lock, User, Loader2 } from 'lucide-react'
+import { apiService } from '@/lib/api'
 
 export default function LoginPage() {
   const router = useRouter()
   const [credentials, setCredentials] = useState({ username: '', password: '' })
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Simple mock authentication
-    if (credentials.username === 'admin' && credentials.password === 'admin123') {
-      localStorage.setItem('isAuthenticated', 'true')
-      localStorage.setItem('userRole', 'admin')
+    setError('')
+    setLoading(true)
+
+    try {
+      await apiService.login(credentials.username, credentials.password)
       router.push('/dashboard')
-    } else if (credentials.username === 'officer' && credentials.password === 'officer123') {
-      localStorage.setItem('isAuthenticated', 'true')
-      localStorage.setItem('userRole', 'officer')
-      router.push('/dashboard')
-    } else {
-      setError('Invalid credentials. Try admin/admin123 or officer/officer123')
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || err?.message || 'Login failed'
+      setError(message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -81,9 +82,17 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-800"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white font-semibold py-3 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-800 flex items-center justify-center"
             >
-              Sign In
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
           </form>
 
