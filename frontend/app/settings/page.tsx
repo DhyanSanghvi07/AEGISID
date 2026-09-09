@@ -1,0 +1,245 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Settings, Shield, Bell, Lock, User, Save, AlertTriangle } from 'lucide-react'
+
+export default function SettingsPage() {
+  const router = useRouter()
+  const [settings, setSettings] = useState({
+    riskThresholds: {
+      green: 30,
+      amber: 70
+    },
+    enableNFC: true,
+    enableLiveness: true,
+    enableTamperDetection: true,
+    enableAuditLogging: true,
+    sessionTimeout: 30,
+    maxUploadSize: 10
+  })
+
+  useEffect(() => {
+    const isAuthenticated = localStorage.getItem('isAuthenticated')
+    if (!isAuthenticated) {
+      router.push('/')
+    }
+  }, [router])
+
+  const handleSave = () => {
+    // In a real application, this would save to the backend
+    alert('Settings saved successfully!')
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900">
+      <nav className="bg-slate-800 border-b border-slate-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="flex items-center text-slate-300 hover:text-white"
+            >
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Back to Dashboard
+            </button>
+            <div className="flex items-center">
+              <Settings className="w-8 h-8 text-blue-500 mr-3" />
+              <span className="text-xl font-bold text-white">System Settings</span>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
+          <p className="text-slate-400">Configure system parameters and security options</p>
+        </div>
+
+        <div className="space-y-6">
+          {/* Risk Thresholds */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+              <Shield className="w-5 h-5 mr-2" />
+              Risk Score Thresholds
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Green Threshold (0-{settings.riskThresholds.green})
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={settings.riskThresholds.green}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    riskThresholds: { ...settings.riskThresholds, green: parseInt(e.target.value) }
+                  })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>0</span>
+                  <span>{settings.riskThresholds.green}</span>
+                  <span>50</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Amber Threshold ({settings.riskThresholds.green}-{settings.riskThresholds.amber})
+                </label>
+                <input
+                  type="range"
+                  min="30"
+                  max="100"
+                  value={settings.riskThresholds.amber}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    riskThresholds: { ...settings.riskThresholds, amber: parseInt(e.target.value) }
+                  })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>30</span>
+                  <span>{settings.riskThresholds.amber}</span>
+                  <span>100</span>
+                </div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-4">
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-yellow-400 mr-2 mt-0.5" />
+                  <div className="text-sm text-slate-400">
+                    <p className="font-medium text-white mb-1">Current Thresholds</p>
+                    <p>GREEN: 0-{settings.riskThresholds.green} | AMBER: {settings.riskThresholds.green}-{settings.riskThresholds.amber} | RED: {settings.riskThresholds.amber}-100</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Verification Features */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+              <Shield className="w-5 h-5 mr-2" />
+              Verification Features
+            </h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white font-medium">NFC Chip Verification</div>
+                  <div className="text-sm text-slate-400">Enable e-Passport chip reading</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableNFC}
+                    onChange={(e) => setSettings({ ...settings, enableNFC: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white font-medium">Liveness Detection</div>
+                  <div className="text-sm text-slate-400">Enable passive liveness checks</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableLiveness}
+                    onChange={(e) => setSettings({ ...settings, enableLiveness: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white font-medium">Tamper Detection</div>
+                  <div className="text-sm text-slate-400">Enable document forensics analysis</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableTamperDetection}
+                    onChange={(e) => setSettings({ ...settings, enableTamperDetection: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white font-medium">Audit Logging</div>
+                  <div className="text-sm text-slate-400">Enable tamper-evident audit logs</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableAuditLogging}
+                    onChange={(e) => setSettings({ ...settings, enableAuditLogging: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Security Settings */}
+          <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
+              <Lock className="w-5 h-5 mr-2" />
+              Security Settings
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Session Timeout (minutes)
+                </label>
+                <input
+                  type="number"
+                  min="5"
+                  max="120"
+                  value={settings.sessionTimeout}
+                  onChange={(e) => setSettings({ ...settings, sessionTimeout: parseInt(e.target.value) })}
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Max Upload Size (MB)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={settings.maxUploadSize}
+                  onChange={(e) => setSettings({ ...settings, maxUploadSize: parseInt(e.target.value) })}
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end">
+            <button
+              onClick={handleSave}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center"
+            >
+              <Save className="w-5 h-5 mr-2" />
+              Save Settings
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
